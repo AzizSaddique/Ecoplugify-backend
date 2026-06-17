@@ -21,25 +21,40 @@ let server;
 let scheduleCheckInterval;
 let scheduleCheckTimeout;
 
-const startServer = async () => {
+const startScheduleChecks = () => {
+  const scheduleService = new ScheduleService();
+  const runScheduleCheck = async () => {
+    try {
+      await scheduleService.checkAndExecuteSchedules();
+    } catch (error) {
+      logger.error(`Schedule check error: ${error.message}`);
+    }
+  };
+
+  const now = new Date();
+  const millisecondsUntilNextMinute =
+    (60 - now.getSeconds()) * 1000 - now.getMilliseconds();
+
+  scheduleCheckTimeout = setTimeout(async () => {
+    await runScheduleCheck();
+    scheduleCheckInterval = setInterval(runScheduleCheck, 60000);
+  }, millisecondsUntilNextMinute);
+};
+
+const initializeBackgroundServices = async () => {
   try {
-    // Connect to MongoDB
     logger.info('Connecting to MongoDB...');
     await connectDB();
 
-    // Connect to Redis
     logger.info('Connecting to Redis...');
     const redisClient = await connectRedis();
 
-    // Initialize Firebase
     logger.info('Initializing Firebase...');
     initializeFirebase();
 
-    // Connect to MQTT
     logger.info('Connecting to MQTT...');
     const mqttClient = await connectMQTT();
 
-    // Initialize queues
     if (redisClient) {
       logger.info('Initializing queues...');
       const queues = await initializeQueues();
@@ -62,55 +77,33 @@ const startServer = async () => {
 
     startOfflineDetector();
     startCrons();
+    startScheduleChecks();
+  } catch (error) {
+    logger.error(`Background service startup error: ${error.message}`);
+  }
+};
 
-    // Create Express app
+const startServer = async () => {
+  try {
     const app = createApp();
-  
-    // Create HTTP server
     server = http.createServer(app);
-
-    // Initialize Socket.IO
     initializeSocket(server);
 
-    // Start schedule checker aligned to the start of each real minute
-    const scheduleService = new ScheduleService();
-    const runScheduleCheck = async () => {
-      try {
-        await scheduleService.checkAndExecuteSchedules();
-      } catch (error) {
-        logger.error(`Schedule check error: ${error.message}`);
-      }
-    };
-
-    const scheduleMinuteAlignedChecks = () => {
-      const now = new Date();
-      const millisecondsUntilNextMinute =
-        (60 - now.getSeconds()) * 1000 - now.getMilliseconds();
-
-      scheduleCheckTimeout = setTimeout(async () => {
-        await runScheduleCheck();
-        scheduleCheckInterval = setInterval(runScheduleCheck, 60000);
-      }, millisecondsUntilNextMinute);
-    };
-
-    scheduleMinuteAlignedChecks();
-
-    // Start listening
+    // Bind before external services so Render health checks pass quickly.
     server.listen(PORT, () => {
-      logger.info(`🚀 Server running on port ${PORT}`);
+      logger.info(`Server running on port ${PORT}`);
       logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
+      initializeBackgroundServices();
     });
   } catch (error) {
     logger.error(`Server startup error: ${error.message}`);
-    process.exit(1);
   }
 };
 
 // Graceful shutdown
 const gracefulShutdown = async () => {
-  logger.info('🛑 Shutting down gracefully...');
+  logger.info('Shutting down gracefully...');
 
-  // Clear interval
   if (scheduleCheckInterval) {
     clearInterval(scheduleCheckInterval);
   }
@@ -118,14 +111,12 @@ const gracefulShutdown = async () => {
     clearTimeout(scheduleCheckTimeout);
   }
 
-  // Close server
   if (server) {
     server.close(() => {
       logger.info('Server closed');
       process.exit(0);
     });
 
-    // Force close after 10 seconds
     setTimeout(() => {
       logger.error('Forcing shutdown...');
       process.exit(1);
@@ -136,7 +127,6 @@ const gracefulShutdown = async () => {
 process.on('SIGTERM', gracefulShutdown);
 process.on('SIGINT', gracefulShutdown);
 
-// Unhandled rejection
 process.on('unhandledRejection', (reason, promise) => {
   logger.error(`Unhandled Rejection at: ${promise}, reason: ${reason}`);
   process.exit(1);
@@ -147,7 +137,6 @@ process.on('uncaughtException', (error) => {
   process.exit(1);
 });
 
-// Start the server
 startServer();
 
 export { server };

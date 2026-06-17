@@ -16,6 +16,15 @@ import authRoutes from './routes/authRoutes.js';
 export const createApp = () => {
   const app = express();
 
+  // Render health check hits the service root before API clients do.
+  app.get('/', (req, res) => {
+    res.status(200).json({
+      status: 'ok',
+      service: 'ecoplugify-backend',
+      timestamp: new Date().toISOString(),
+    });
+  });
+
   // Security middleware
   app.use(helmet());
   app.use(cors({

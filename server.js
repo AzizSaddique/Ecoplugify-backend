@@ -43,14 +43,14 @@ const startScheduleChecks = () => {
 
 const initializeBackgroundServices = async () => {
   try {
+    logger.info('Initializing Firebase...');
+    initializeFirebase();
+
     logger.info('Connecting to MongoDB...');
     await connectDB();
 
     logger.info('Connecting to Redis...');
     const redisClient = await connectRedis();
-
-    logger.info('Initializing Firebase...');
-    initializeFirebase();
 
     logger.info('Connecting to MQTT...');
     const mqttClient = await connectMQTT();

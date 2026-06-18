@@ -2,8 +2,30 @@ import express from 'express';
 import authenticate from '../middleware/auth.js';
 import User from '../models/User.js';
 import logger from '../utils/logger.js';
+import { isFirebaseReady } from '../config/firebase.js';
 
 const router = express.Router();
+
+router.get('/health', (req, res) => {
+  res.json({
+    success: true,
+    data: {
+      firebaseReady: isFirebaseReady(),
+      projectId: process.env.FIREBASE_PROJECT_ID || null,
+      hasClientEmail: Boolean(process.env.FIREBASE_CLIENT_EMAIL),
+      hasPrivateKey: Boolean(process.env.FIREBASE_PRIVATE_KEY),
+    },
+  });
+});
+
+router.get('/verify-token', authenticate, (req, res) => {
+  res.json({
+    success: true,
+    data: {
+      user: req.user,
+    },
+  });
+});
 
 router.post('/fcm-token', authenticate, async (req, res, next) => {
   try {

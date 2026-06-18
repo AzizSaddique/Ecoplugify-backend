@@ -171,6 +171,10 @@ export { admin };
 export const verifyToken = async (token) => {
   try {
     if (!admin.apps.length) {
+      initializeFirebase();
+    }
+
+    if (!admin.apps.length) {
       if (process.env.NODE_ENV === 'development') {
         const decodedPayload = decodeJwtPayload(token);
 

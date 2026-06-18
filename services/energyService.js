@@ -272,13 +272,25 @@ export class EnergyService {
   async getLatestReading(deviceId, userId) {
     try {
       const device = await Device.findOne({ deviceId, userId, active: true }).lean();
-      if (!device) {
-        return null;
-      }
-
       const redisClient = getRedis();
 
       if (redisClient) {
+        if (!device) {
+          const latestRaw = await redisClient.get(`device:${deviceId}:latest_raw`);
+          if (latestRaw) {
+            try {
+              return {
+                ...JSON.parse(latestRaw),
+                pendingLink: true,
+              };
+            } catch (error) {
+              logger.warn(`Ignoring invalid raw latest reading cache for ${deviceId}: ${error.message}`);
+            }
+          }
+
+          return null;
+        }
+
         const latestCached = await redisClient.get(`device:${deviceId}:latest`);
         if (latestCached) {
           try {
@@ -312,6 +324,10 @@ export class EnergyService {
             logger.warn(`Ignoring invalid last energy cache for ${deviceId}: ${error.message}`);
           }
         }
+      }
+
+      if (!device) {
+        return null;
       }
 
       const reading = await Reading.findOne({ deviceId, userId })

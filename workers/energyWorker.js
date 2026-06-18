@@ -16,6 +16,12 @@ const MAX_REASONABLE_POWER_WATTS = Number(
 const DEVICE_LOCK_TTL_SECONDS = Number(
   process.env.DEVICE_READING_LOCK_TTL_SECONDS || 10,
 );
+const DEVICE_LOCK_WAIT_ATTEMPTS = Number(
+  process.env.DEVICE_READING_LOCK_WAIT_ATTEMPTS || 50,
+);
+const DEVICE_LOCK_WAIT_MS = Number(
+  process.env.DEVICE_READING_LOCK_WAIT_MS || 100,
+);
 const LAST_ENERGY_TTL_SECONDS = Number(
   process.env.DEVICE_LAST_ENERGY_TTL_SECONDS || 24 * 60 * 60,
 );
@@ -606,7 +612,7 @@ const acquireDeviceLock = async (redisClient, deviceId) => {
   const lockKey = `device:${deviceId}:reading-lock`;
   const token = `${process.pid}:${Date.now()}:${Math.random()}`;
 
-  for (let attempt = 0; attempt < 10; attempt += 1) {
+  for (let attempt = 0; attempt < DEVICE_LOCK_WAIT_ATTEMPTS; attempt += 1) {
     const acquired = await redisClient.set(lockKey, token, {
       NX: true,
       EX: DEVICE_LOCK_TTL_SECONDS,
@@ -625,10 +631,11 @@ const acquireDeviceLock = async (redisClient, deviceId) => {
       };
     }
 
-    await sleep(50);
+    await sleep(DEVICE_LOCK_WAIT_MS);
   }
 
-  throw new Error(`Timed out waiting for reading lock: ${deviceId}`);
+  logger.warn(`[Worker] Skipping reading because lock is busy: ${deviceId}`);
+  return null;
 };
 
 const getTodayRange = (date = new Date()) => {
@@ -664,6 +671,9 @@ export const startEnergyWorker = () => {
 
           const redisClient = getRedis();
           releaseLock = await acquireDeviceLock(redisClient, deviceId);
+          if (!releaseLock) {
+            return { success: false, skipped: 'reading-lock-busy' };
+          }
 
           const totalEnergy = toValidCumulativeEnergy(payload);
           if (totalEnergy === null) {
@@ -1006,7 +1016,8 @@ export const startEnergyWorker = () => {
         maxRetriesPerRequest: null,
         enableReadyCheck: false,
       },
-      concurrency: 5,
+      // ESP32 sends cumulative counters, so readings must be processed in order.
+      concurrency: Number(process.env.ENERGY_WORKER_CONCURRENCY || 1),
     },
   );
 

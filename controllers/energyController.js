@@ -42,9 +42,10 @@ export const getLatestReading = async (req, res, next) => {
     const reading = await energyService.getLatestReading(deviceId, req.user.uid);
 
     if (!reading) {
-      return res.status(404).json({
-        success: false,
-        message: 'No readings found',
+      return res.status(200).json({
+        success: true,
+        data: null,
+        message: 'No readings found yet',
       });
     }
 
